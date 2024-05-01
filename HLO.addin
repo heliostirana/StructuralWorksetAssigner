@@ -1,0 +1,17 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<RevitAddIns>
+	<AddIn Type="Command">
+		<Name>MyFirstRevitPlugin</Name>
+		<FullClassName>HLO.Class1</FullClassName>
+		<Text> Hello World</Text>
+		<Description> Hello World Description</Description>
+		<VisibilityMode>AlwaysVisible</VisibilityMode>
+		<Assembly>
+			<!--Your .dll path location-->
+			C:\Users\helios\source\repos\HLO\bin\Debug\HLO.dll
+		</Assembly>
+		<AddInId>502fe383-2648-4e98-adf8-5e6047f9dc34</AddInId>
+		<VendorId>www.aec-tech.net</VendorId>
+		<VendorDescription>www.aec-tech.net</VendorDescription>
+	</AddIn>
+</RevitAddIns>
