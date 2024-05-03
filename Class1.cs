@@ -10,6 +10,8 @@ using System.Linq;
 using System.Text;
 using Microsoft.VisualBasic;
 using System.Threading.Tasks;
+using Autodesk.Revit.DB.Structure;
+using System.Diagnostics;
 
 
 
@@ -21,92 +23,199 @@ namespace HLO
     {
         public Result Execute(ExternalCommandData commandData, ref string message, ElementSet elements)
         {
+            // main variables declared
             var uiapp = commandData.Application;
             var uidoc = uiapp.ActiveUIDocument;
             var app = uiapp.Application;
             var doc = uidoc.Document;
 
-            // FOR ONE ELEMENT ONLY
-            /* var element = uidoc.Selection.GetElementIds().Select(x => doc.GetElement(x)).First();
-             var value = element.get_Parameter(BuiltInParameter.ALL_MODEL_INSTANCE_COMMENTS).AsString(); */
+            // user input called
 
             Form1 form1 = new Form1(commandData);
-            form1.worksetName = "Enter workset";
             form1.ShowDialog();
-            string worksetName = form1.worksetName;
+            if (!form1.fail)
+            {
+                return Result.Cancelled;
+            }
+
+            // FAMILY NAMES
+            string colName = "S_COLUMN";
+            string wallName = "S_WALL";
+            string slabName = "S_SLAB";
+            string framingName = "S_BEAM";
+            string foundName = "S_FOUNDATION";
+            string shaftName = "S_SHAFT";
+            string stairName = "S_STAIR";
+
 
             // OBTAIN WORKSET ID FROM WORKSET NAME
 
-            FilteredWorksetCollector col = new FilteredWorksetCollector(doc);
-            Workset workset = col.FirstOrDefault<Workset>(e => e.Name.Equals(worksetName));
-            WorksetTable worksetTable = doc.GetWorksetTable();
-            WorksetId worksetId = new WorksetId(workset.Id.IntegerValue);
-            /* WorksetTable worksetTable = doc.GetWorksetTable();
             FilteredWorksetCollector collector = new FilteredWorksetCollector(doc);
-            ICollection<WorksetId> worksetIds = collector.ToWorksetIds();
 
-            WorksetId worksetId = null;
-
-           foreach (WorksetId id in worksetIds)
-            {
-                Workset workset = worksetTable.GetWorkset(id);
-                if (workset.Name.ToLower() == worksetName.ToLower())
-                {
-                    worksetId = id;
-                    break;
-                }
-            } */
-            
-           
-            
-            var familyIds = uidoc.Selection.GetElementIds();
-            var families = new List<Element>();
-            using (var transaction = new Transaction(doc, "Set Values"))
+            using (var transaction = new Transaction(doc, "Set Worksets"))
             {
                 transaction.Start();
-                foreach (var familyId in familyIds)
+                if (form1.column)
                 {
-                    doc.GetElement(familyId).get_Parameter(BuiltInParameter.ELEM_PARTITION_PARAM).Set(worksetId.IntegerValue);
+                    var colWorkset = collector.FirstOrDefault<Workset>(e => e.Name.Equals(colName));
+                    var columnWorkId = new WorksetId(colWorkset.Id.IntegerValue);
+
+                    FilteredElementCollector colCollector = new FilteredElementCollector(doc);
+                    ElementCategoryFilter columnFilter = new ElementCategoryFilter(BuiltInCategory.OST_StructuralColumns);
+
+                    IList<Element> columns = colCollector.WherePasses(columnFilter).WhereElementIsNotElementType().ToElements();
+
+                    foreach (var col in columns)
+                    {
+                        ElementId familyId = col.Id;
+                        string famName = doc.GetElement(familyId).get_Parameter(BuiltInParameter.ELEM_CATEGORY_PARAM).AsValueString();
+                        int prop = doc.GetElement(familyId).get_Parameter(BuiltInParameter.ELEM_PARTITION_PARAM).AsInteger();
+                        FamilyInstance fi = col as FamilyInstance;
+                        if ((famName.StartsWith("Structural") && form1.column)) // COLUMN ASSIGN
+                        {
+                            Parameter wsparam = col.get_Parameter(BuiltInParameter.ELEM_PARTITION_PARAM);
+                            wsparam.Set(columnWorkId.IntegerValue);
+
+                        }
+                    }
+
                 }
+
+                if (form1.wall)
+                {
+                    var waWorkset = collector.FirstOrDefault<Workset>(e => e.Name.Equals(wallName));
+                    var wallWorkId = new WorksetId(waWorkset.Id.IntegerValue);
+
+                    FilteredElementCollector wallCollector = new FilteredElementCollector(doc).OfCategory(BuiltInCategory.OST_Walls);
+
+                    foreach (var wall in wallCollector) // swap out with familyIds
+                    {
+                        ElementId familyId = wall.Id;
+                        string famName = doc.GetElement(familyId).get_Parameter(BuiltInParameter.ELEM_TYPE_PARAM).AsValueString();
+
+                        if (famName.ToUpper().StartsWith("SSA")) // WALL
+                        {
+                            doc.GetElement(familyId).get_Parameter(BuiltInParameter.ELEM_PARTITION_PARAM).Set(wallWorkId.IntegerValue);
+                        }
+                    }
+
+                }
+
+                if (form1.slab)
+                {
+                    var slWorkset = collector.FirstOrDefault<Workset>(e => e.Name.Equals(slabName));
+                    var slabWorkId = new WorksetId(slWorkset.Id.IntegerValue);
+
+                    FilteredElementCollector slabCollector = new FilteredElementCollector(doc).OfCategory(BuiltInCategory.OST_Floors);
+
+                    foreach (var slab in slabCollector)
+                    {
+                        string famName = doc.GetElement(slab.Id).get_Parameter(BuiltInParameter.ELEM_TYPE_PARAM).AsValueString();
+                        if ((famName.ToUpper().StartsWith("SSA") && form1.slab)) // SLAB ASSIGN
+                        {
+                            doc.GetElement(slab.Id).get_Parameter(BuiltInParameter.ELEM_PARTITION_PARAM).Set(slabWorkId.IntegerValue);
+                        }
+                    }
+
+                }
+                if (form1.framing)
+                {
+                    var frWorkset = collector.FirstOrDefault<Workset>(e => e.Name.Equals(framingName));
+                    var framWorkId = new WorksetId(frWorkset.Id.IntegerValue);
+
+                    FilteredElementCollector framCollector = new FilteredElementCollector(doc);
+                    ElementCategoryFilter framingFilter = new ElementCategoryFilter(BuiltInCategory.OST_StructuralFraming);
+
+                    IList<Element> framing = framCollector.WherePasses(framingFilter).WhereElementIsNotElementType().ToElements();
+
+                    foreach (var beam in framing)
+                    {
+
+                        string famName = doc.GetElement(beam.Id).get_Parameter(BuiltInParameter.ELEM_CATEGORY_PARAM).AsValueString();
+                        if (famName.StartsWith("Structural") && form1.framing) // FRAMING
+                        {
+                            Parameter wsparam = beam.get_Parameter(BuiltInParameter.ELEM_PARTITION_PARAM);
+                            wsparam.Set(framWorkId.IntegerValue);
+                        }
+                    }
+                }
+
+                if (form1.foundation)
+                {
+                    var foundWorkset = collector.FirstOrDefault<Workset>(e => e.Name.Equals(foundName));
+                    var foundWorkId = new WorksetId(foundWorkset.Id.IntegerValue);
+
+                    FilteredElementCollector foundCollector = new FilteredElementCollector(doc);
+                    ElementCategoryFilter foundationFilter = new ElementCategoryFilter(BuiltInCategory.OST_StructuralFoundation);
+
+                    IList<Element> foundations = foundCollector.WherePasses(foundationFilter).WhereElementIsNotElementType().ToElements();
+
+                    foreach (var foundation in foundations)
+                    {
+                        string famName = doc.GetElement(foundation.Id).get_Parameter(BuiltInParameter.ELEM_FAMILY_PARAM).AsValueString();
+                        string categName = doc.GetElement(foundation.Id).get_Parameter(BuiltInParameter.ELEM_CATEGORY_PARAM).AsValueString();
+                        if ((famName.ToUpper().StartsWith("SSA") || categName.ToUpper().StartsWith("STRUCTURAL")) && form1.foundation)
+                        {
+                            Parameter wsparam = foundation.get_Parameter(BuiltInParameter.ELEM_PARTITION_PARAM);
+                            wsparam.Set(foundWorkId.IntegerValue);
+                        }
+                    }
+                }
+
+                if (form1.shaft)
+                {
+                    var shaftWorkset = collector.FirstOrDefault<Workset>(e => e.Name.Equals(shaftName));
+                    var shaftWorkId = new WorksetId(shaftWorkset.Id.IntegerValue);
+
+                    FilteredElementCollector shaftCollector = new FilteredElementCollector(doc);
+                    ElementCategoryFilter shaftFilter = new ElementCategoryFilter(BuiltInCategory.OST_ShaftOpening);
+
+                    IList<Element> shafts = shaftCollector.WherePasses(shaftFilter).WhereElementIsNotElementType().ToElements();
+
+                    foreach (var shaft in shafts)
+                    {
+                        string categName = doc.GetElement(shaft.Id).get_Parameter(BuiltInParameter.ELEM_CATEGORY_PARAM).AsValueString();
+                        if (form1.shaft)
+                        {
+                            Parameter wsparam = shaft.get_Parameter(BuiltInParameter.ELEM_PARTITION_PARAM);
+                            wsparam.Set(shaftWorkId.IntegerValue);
+                        }
+                    }
+                }
+
+                if (form1.stairs)
+                {
+                    var stairWorkset = collector.FirstOrDefault<Workset>(e => e.Name.Equals(stairName));
+                    var stairWorkId = new WorksetId(stairWorkset.Id.IntegerValue);
+
+                    FilteredElementCollector stairCollector = new FilteredElementCollector(doc);
+                    ElementCategoryFilter stairFilter = new ElementCategoryFilter(BuiltInCategory.OST_Stairs);
+
+                    IList<Element> stairs = stairCollector.WherePasses(stairFilter).WhereElementIsNotElementType().ToElements();
+
+                    foreach (var stair in stairs)
+                    {
+                        if (form1.stairs)
+                        {
+                            Parameter wsparam = stair.get_Parameter(BuiltInParameter.ELEM_PARTITION_PARAM);
+                            wsparam.Set(stairWorkId.IntegerValue);
+                        }
+                    }
+                }
+
                 transaction.Commit();
-            }
-            
+                TaskDialog.Show("Alert", "Success");
 
-            
-            
-
-
-            
-
-
-            /* using (var transaction = new Transaction(doc, "Set Values"))
-            {
-                transaction.Start();
-                element.get_Parameter(BuiltInParameter.ELEM_PARTITION_PARAM).Set(worksetId);
-                transaction.Commit();
-            }
-            TaskDialog.Show("Message", "Successfully set workset"); */
-
-            /* var familyInstanceFilter = new ElementClassFilter(typeof(FamilyInstance));
-
-            var colsCategoryFilter = new ElementCategoryFilter(BuiltInCategory.OST_StructuralColumns);
-            var logicalAndFilter = new LogicalAndFilter(familyInstanceFilter, colsCategoryFilter);
-
-            var collector = new FilteredElementCollector(doc).WherePasses(logicalAndFilter);
-            var familyIds = uidoc.Selection.GetElementIds();
-
-            var families = new List<Element>();
-            foreach (var familyId in familyIds)
-            {
-                families.Add(doc.GetElement(familyId));
             }
 
-            SimpleForm simpleForm = new SimpleForm(collector);
-            simpleForm.ShowDialog(); */
 
+            // tick
 
             return Result.Succeeded;
         }
+
+
+            
 
         
     }
